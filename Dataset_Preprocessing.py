@@ -9,16 +9,18 @@ def download_dataset() :
     dataset = load_dataset("roneneldan/TinyStories")
     return dataset
 
-def get_tokenizer() : 
-    tokenizer = tiktoken.get_encoding("gpt2")
+def get_tokenizer(tokenizer_type:str) : 
+    tokenizer = tiktoken.get_encoding(tokenizer_type)
     return tokenizer
+tokenizer  = get_tokenizer("gpt2")
 
-def process(data,tokenizer) :
+def process(data) :
     ids = tokenizer.encode_ordinary(data["text"])
+
     out = {'ids':ids , "len" : len(ids)}
     return out
 
-def Build_Dataset(dataset) : 
+def Build_Dataset(dataset,tokenizer) : 
     if not os.path.exists('train.bin'):
         tokenized = dataset.map(
         process,
@@ -28,7 +30,7 @@ def Build_Dataset(dataset) :
         )
         for split , dset in tokenized.items() :
             arr_len = np.sum(dset["len"],dtype=np.int64)
-            filename = f"{split}.txt"
+            filename = f"{split}.bin"
             dtype = np.uint16
             arr = np.memmap(filename, dtype=dtype, mode="w+",shape=(arr_len,))
             total_batches = 1024
@@ -42,11 +44,11 @@ def Build_Dataset(dataset) :
             arr.flush()
         
 
-def get_batch(split,block_size,batch_size,device) : 
+def get_batch(split,block_size,batch_size,device,train_path,val_path) : 
     if split == "train":
-        data = np.memap("train.bin",dtype=np.uint16,mode='r')
+        data = np.memmap(train_path,dtype=np.uint16,mode='r')
     else : 
-        data = np.memap("validation.bin",dtype=np.uint16,mode='r')
+        data = np.memmap(val_path,dtype=np.uint16,mode='r')
     ix = torch.randint(len(data) - block_size, (batch_size,))
     x = torch.stack([torch.from_numpy((data[i:i+block_size]).astype(np.int64)) for i in ix])
     y = torch.stack([torch.from_numpy((data[i+1:i+1+block_size]).astype(np.int64)) for i in ix])
