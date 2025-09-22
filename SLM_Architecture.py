@@ -3,16 +3,12 @@ import torch.nn as nn
 import torch.nn.functional as F
 import math
 from dataclasses import dataclass
-import numpy as np 
-from tqdm.auto import tqdm 
-from contextlib import nullcontext
-import os 
 
 class LayerNorm(nn.Module):
     def __init__(self,ndim,bias) : 
         super().__init__()
         self.weight = nn.Parameter(torch.ones(ndim))
-        self.bias = nn.parameter(torch.zeros(ndim)) if bias else None
+        self.bias = nn.Parameter(torch.zeros(ndim)) if bias else None
     def forward(self,x):
         return F.layer_norm(x,self.weight.shape,self.weight,self.bias,1e-5)
 class CausalSelfAttention(nn.Module):
@@ -64,7 +60,7 @@ class Transformer_Block(nn.Module):
         super().__init__()
         self.ln1 = LayerNorm(config.n_embed,config.bias)
         self.attn = CausalSelfAttention(config)
-        self.ln1 = LayerNorm(config.n_embed,config.bias)
+        self.ln2 = LayerNorm(config.n_embed,config.bias)
         self.mlp = MLP(config)
     def forward(self,x):
         x = x + self.attn(self.ln1(x))
@@ -97,8 +93,8 @@ class GPTModel(nn.Module):
         elif isinstance(module,nn.Embedding):
             nn.init.normal_(module.weight,mean=0.0,std=0.02)
     def forward(self,idx,targets=None) : 
-        device = idx
         b,t = idx.size()
+        device = idx.device
         assert t <= self.config.block_size
         pos = torch.arange(0,t,dtype=torch.long,device=device)
         tok_embed = self.transformer.wte(idx)
@@ -116,6 +112,7 @@ class GPTModel(nn.Module):
     def generate(self,idx,max_new_tokens,temperature=1.0,top_k=None):
         for _ in range(max_new_tokens) : 
             idx_cond = idx if idx.size(1) <= self.config.block_size else idx[:,-self.config.block_size:]
+            logits, _ = self(idx_cond)
             logits = logits[:,-1,:] / temperature
             if top_k is not None : 
                 v,_ = torch.topk(logits,k=min(top_k,logits.size(-1)))
@@ -124,7 +121,6 @@ class GPTModel(nn.Module):
             idx_next = torch.multinomial(probs,num_samples=1)
             idx = torch.cat((idx,idx_next),dim=1)
         return idx
-
 
 @dataclass
 class GPTConfig:
